@@ -1,0 +1,34 @@
+name: PR-scan
+
+on:
+  pull_request:
+    branches:
+    - main
+
+concurrency:
+  group: ci-build-${{ github.ref }}-1
+  cancel-in-progress: true
+
+jobs:
+  scan-manifests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+# Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - name: Checkout template
+        uses: actions/checkout@v2
+
+      - name: Install Kyverno CLI
+        uses: kyverno/action-install-cli@v0.2.0
+
+      - name: Check Kyverno install
+        run: kyverno version
+
+      - name: Validate manifests
+        run: |
+          kyverno apply https://github.com/nirmata/cci-policies/policies/ -b main  --resource=./nginx
+        
