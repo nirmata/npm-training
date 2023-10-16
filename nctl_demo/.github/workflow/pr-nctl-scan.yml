@@ -1,0 +1,66 @@
+name: PR-scan
+
+on:
+  pull_request:
+    branches:
+    - main
+
+concurrency:
+  group: ci-build-${{ github.ref }}-1
+  cancel-in-progress: true
+
+jobs:
+  scan-manifests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+# Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - name: Checkout manifests
+        uses: actions/checkout@v2
+
+      - name: Download policies
+        uses: actions/checkout@v2
+        with:
+          repository: nirmata/cci-policies
+          path: './cci-policies'
+
+#      - name: Install Nirmata CLI
+#        run: |
+#          curl -O -L -s https://nirmata-downloads.s3.us-east-2.amazonaws.com/nctl/nctl_3.3.7/nctl_3.3.7_linux_64-bit.zip
+#          unzip *.zip
+#         ls -lR ./cci-policies
+      - name: Install Nirmata CLI
+        uses: keithweaver/aws-s3-github-action@v1.0.0
+        with:
+          command: cp
+          source: s3://nctl-cci-demo/nctl
+          destination: ./nctl
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_KEY }}
+          aws_region: us-west-1
+          
+      - name: Check nctl install
+        run: |
+          sudo chmod 755 ./nctl
+          ./nctl version
+
+      - name: Validate manifests
+        run: |
+          ./nctl scan --policies ./cci-policies/policies --resource=./nginx -e
+          ./nctl scan --policies ./cci-policies/policies --resource=./nginx -o json --file temp.json
+          FAIL_COUNT=$(cat ./temp.json |jq '.OverallSummary.Fail')
+          echo $FAIL_COUNT
+          if [[ $FAIL_COUNT == "0" ]]; then
+            echo "No errors found"
+          else
+            echo "$FAIL_COUNT errors found"
+            exit 1
+          fi
+
+      - name: Validate dockerfile
+        run: |
+          ./nctl scan --policies ./cci-policies/docker-policies --resource=./docker/Dockerfile --resource-type dockerfile -e
